@@ -27,6 +27,7 @@ from .const.const import (
 )
 from .sensor_custom import CustomSensor
 from .sensor_provider import ProviderSensor
+from .sensor_notification import NotificationSensor
 
 # YAML support (optional / legacy)
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
@@ -107,6 +108,8 @@ async def _setup_sensors(hass, config, async_add_entities, data=None):
         ProviderSensor(hass, wtype, data, config) for wtype in waste_types_provider
     ] + [
         CustomSensor(hass, wtype, data, config) for wtype in waste_types_custom
+    ] + [
+        NotificationSensor(hass, data, config)
     ]
 
     if not entities:
@@ -126,6 +129,7 @@ class AfvalwijzerData:
         self.waste_data_with_today = None
         self.waste_data_without_today = None
         self.waste_data_custom = None
+        self.notification_data = None
 
     def update(self):
         """
@@ -158,6 +162,8 @@ class AfvalwijzerData:
             self.waste_data_without_today = collector.waste_data_without_today
             self.waste_data_custom = collector.waste_data_custom
             _LOGGER.debug("Waste data updated successfully.")
+            self.notification_data = collector.notification_data
+            _LOGGER.debug(f"Retrieved notification_data with {len(self.notification_data) if self.notification_data else 0} items")
             return True, None
         except TimeoutError as err:
             _LOGGER.warning("Timeout fetching waste data: %s", err)
