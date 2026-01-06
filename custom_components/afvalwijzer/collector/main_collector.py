@@ -60,6 +60,12 @@ class MainCollector:
             self.exclude_list,
             self.default_label,
         )
+        # Get notification data
+        try:
+            self._notification_data = self._get_notification_data_raw()
+        except Exception as err:
+            _LOGGER.warning(f"Failed to get notification data: {err}")
+            self._notification_data = []
 
     def _normalize_bool_param(self, param) -> str:
         """
@@ -105,6 +111,32 @@ class MainCollector:
             _LOGGER.error(f"Check afvalwijzer platform settings: {err}")
             raise
 
+    def _get_notification_data_raw(self):
+        """
+        Retrieves notification data from providers that support it.
+        Returns an empty list if provider doesn't support notifications.
+        """
+        try:
+            # Currently only OPZET provider support notifications
+            notification_providers = [
+                (SENSOR_COLLECTORS_OPZET, opzet.get_notification_data_raw),
+            ]
+
+            for sensor_set, getter in notification_providers:
+                keys = sensor_set.keys() if isinstance(sensor_set, dict) else sensor_set
+                if self.provider in keys:
+                    result = getter(self.provider, self.postal_code, self.street_number, self.suffix)
+                    _LOGGER.debug(f"Retrieved {len(result)} notifications from {self.provider}") 
+                    return result
+
+            # Provider without notification support
+            _LOGGER.debug(f"Provider {self.provider} does not support notifications")
+            return []
+
+        except Exception as err:
+            _LOGGER.warning(f"Could not fetch notification data for {self.provider}: {err}")
+            return []
+
     @property
     def waste_data_with_today(self):
         return self._waste_data.waste_data_with_today
@@ -128,3 +160,14 @@ class MainCollector:
     @property
     def waste_types_custom(self):
         return self._waste_data.waste_types_custom
+
+    @property
+    def notification_data(self):
+        """Returns the notification data."""
+        _LOGGER.debug(f"notification_data property called, returning {len(self._notification_data)} items")
+        return self._notification_data
+
+    @property
+    def notification_count(self):
+        """Returns the number of notifications."""
+        return len(self._notification_data)
