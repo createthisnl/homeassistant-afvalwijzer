@@ -4,6 +4,9 @@ from datetime import datetime
 import requests
 from urllib3.exceptions import InsecureRequestWarning
 
+import re
+from html import unescape
+
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
@@ -57,5 +60,60 @@ def get_waste_data_raw(provider, postal_code, street_number, suffix):
 
     return waste_data_raw
 
+def get_notification_data_raw(provider, postal_code, street_number, suffix):
+    if provider not in SENSOR_COLLECTORS_OPZET:
+        raise ValueError(f"Invalid provider: {provider}, please verify")
 
+    try:
+        suffix = suffix.strip().upper()
+        _verify = provider != "suez"
+        url_address = f"{SENSOR_COLLECTORS_OPZET[provider]}/rest/adressen/{postal_code}-{street_number}"
+        raw_response_address = requests.get(url_address, timeout=60, verify=False)
+        raw_response_address.raise_for_status()  # Raise an HTTPError for bad responses
 
+        response_address = raw_response_address.json()
+
+        if not response_address:
+            _LOGGER.error("No notification data found!")
+            return []
+
+        bag_id = None
+
+        if len(response_address) > 1 and suffix:
+            for item in response_address:
+                if item["huisletter"] == suffix or item["huisnummerToevoeging"] == suffix:
+                    bag_id = item["bagId"]
+                    break
+        else:
+            bag_id = response_address[0]["bagId"]
+
+        url_notification = f"{SENSOR_COLLECTORS_OPZET[provider]}/api/meldingen/{bag_id}/App"
+        raw_response_notification = requests.get(url_notification, timeout=60, verify=False)
+        raw_response_notification.raise_for_status()  # Raise an HTTPError for bad responses
+
+        notification_data_raw_temp = raw_response_notification.json()
+        _LOGGER.debug(f"Got raw notification data: {notification_data_raw_temp}")
+        notification_data_raw = []
+
+        for item in notification_data_raw_temp:
+            if not item["content"]:
+                continue
+
+            notification_content = re.sub('<[^<]+?>', '', item["content"])
+            notification_content = unescape(notification_content).strip()
+            if not notification_content:
+                continue
+
+            notification_data_raw.append({
+                "id": item["id"],
+                "title": item["kop"],
+                "content": notification_content,
+                "dismissable": bool(item["afwijsbaar"])
+            })
+
+        _LOGGER.debug(f"Raw notification data: {notification_data_raw}")
+
+    except requests.exceptions.RequestException as err:
+        raise ValueError(err) from err
+
+    return notification_data_raw
